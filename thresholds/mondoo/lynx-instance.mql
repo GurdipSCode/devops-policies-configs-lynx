@@ -1,0 +1,254 @@
+policies:
+  - uid: lynx-instance-security
+    name: Clivern Lynx Instance Security
+    version: "1.0.0"
+    scoring_system: highest impact
+    authors:
+      - name: Platform Team
+        email: platform@gurdipscode.com
+    docs:
+      desc: |
+        Post-deployment security scanning for running Clivern Lynx instances.
+        Catches manual changes, config drift, and runtime misconfigurations
+        that Terraform plan validation cannot detect.
+        Thresholds defined in security-config under lynx.runtime.*
+    groups:
+      - title: TLS and Transport Security
+        checks:
+          - uid: lynx-rt-001
+            title: Lynx must be served over HTTPS
+            impact: critical
+            docs:
+              desc: |
+                Terraform state contains sensitive infrastructure details.
+                All access must be encrypted in transit.
+              remediation: |
+                Configure nginx reverse proxy with TLS termination or
+                set SSL certificates directly in Lynx config.
+            mql: |
+              ports.where(port == 443).length > 0 ||
+              processes.where(name == /nginx/).length > 0
+
+          - uid: lynx-rt-002
+            title: TLS certificate must not be expiring soon
+            impact: high
+            docs:
+              remediation: Renew TLS certificate before expiry.
+            mql: |
+              tls("localhost:443").certificates.all(
+                expiresIn > 30 * time.day
+              )
+
+          - uid: lynx-rt-003
+            title: TLS must use minimum version 1.2
+            impact: high
+            mql: |
+              tls("localhost:443").versions.none(
+                _ == "tls1.0" || _ == "tls1.1"
+              )
+
+      - title: Process and Container Security
+        checks:
+          - uid: lynx-rt-004
+            title: Lynx must not run as root
+            impact: critical
+            docs:
+              remediation: |
+                Run the Lynx container with a non-root user. Set
+                USER directive in Dockerfile or runAsUser in K8s.
+            mql: |
+              processes.where(name == /beam/ || name == /elixir/).all(
+                user != "root"
+              )
+
+          - uid: lynx-rt-005
+            title: Container must not use latest tag
+            impact: high
+            mql: |
+              docker.containers.where(
+                names.any( /lynx/ )
+              ).all(
+                image.none( /\:latest$/ )
+              )
+
+          - uid: lynx-rt-006
+            title: Container must have memory limits set
+            impact: 60
+            mql: |
+              docker.containers.where(
+                names.any( /lynx/ )
+              ).all(
+                hostConfig['Memory'] > 0
+              )
+
+          - uid: lynx-rt-007
+            title: Container must have CPU limits set
+            impact: 60
+            mql: |
+              docker.containers.where(
+                names.any( /lynx/ )
+              ).all(
+                hostConfig['NanoCpus'] > 0 ||
+                hostConfig['CpuQuota'] > 0
+              )
+
+      - title: Database Security
+        checks:
+          - uid: lynx-rt-008
+            title: PostgreSQL must require TLS connections
+            impact: high
+            docs:
+              remediation: |
+                Set ssl = on in postgresql.conf and configure
+                ssl_cert_file and ssl_key_file.
+            mql: |
+              postgresql.conf.params['ssl'] == 'on'
+
+          - uid: lynx-rt-009
+            title: PostgreSQL must not use default credentials
+            impact: critical
+            docs:
+              desc: |
+                Default postgres/postgres or lynx/lynx credentials
+                must be changed in all environments.
+            mql: |
+              postgresql.conf.params['password_encryption'] == 'scram-sha-256'
+
+          - uid: lynx-rt-010
+            title: PostgreSQL version must meet minimum
+            impact: 60
+            mql: |
+              postgresql.conf.params['server_version'].split('.')[0].toInt >= 15
+
+      - title: Network Exposure
+        checks:
+          - uid: lynx-rt-011
+            title: Lynx must not be directly exposed on public interface
+            impact: high
+            docs:
+              desc: |
+                Lynx should listen on localhost behind a reverse proxy,
+                not directly on 0.0.0.0.
+              remediation: |
+                Bind Lynx to 127.0.0.1:4000 and front with nginx.
+            mql: |
+              ports.where(port == 4000).all(
+                address == "127.0.0.1" || address == "::1"
+              )
+
+          - uid: lynx-rt-012
+            title: Reverse proxy must be running
+            impact: high
+            mql: |
+              processes.where(name == /nginx/ || name == /caddy/).length > 0
+
+          - uid: lynx-rt-013
+            title: Only expected ports must be listening
+            impact: 60
+            docs:
+              remediation: |
+                Only ports 80, 443 (proxy) and 4000 (Lynx internal)
+                should be listening.
+            mql: |
+              ports.listening.all(
+                port == 80 || port == 443 || port == 4000 ||
+                port == 5432
+              )
+
+      - title: Cluster Health
+        checks:
+          - uid: lynx-rt-014
+            title: Minimum cluster nodes must be running
+            impact: high
+            docs:
+              desc: |
+                Production Lynx must run in clustered mode with
+                minimum node count for availability.
+            mql: |
+              docker.containers.where(
+                names.any( /lynx/ ) && state == "running"
+              ).length >= 3
+
+          - uid: lynx-rt-015
+            title: Health check endpoint must respond
+            impact: critical
+            mql: |
+              http.get("http://localhost:4000/health").statusCode == 200
+
+      - title: User and Access Hygiene
+        checks:
+          - uid: lynx-rt-016
+            title: Admin user count must not exceed threshold
+            impact: high
+            docs:
+              desc: |
+                Excessive admin accounts increase blast radius.
+                Check is performed against the live Lynx API.
+              remediation: |
+                Demote unnecessary admin users to regular role.
+            mql: |
+              http.get("http://localhost:4000/api/v1/user").body.jsonArray.where(
+                role == "admin"
+              ).length <= 3
+
+          - uid: lynx-rt-017
+            title: No orphaned users without team membership
+            impact: 60
+            docs:
+              remediation: |
+                Assign all users to at least one team or remove
+                inactive accounts.
+            mql: |
+              http.get("http://localhost:4000/api/v1/user").body.jsonArray.all(
+                teams.length > 0
+              )
+
+      - title: State and Snapshot Integrity
+        checks:
+          - uid: lynx-rt-018
+            title: No stale state locks detected
+            impact: high
+            docs:
+              desc: |
+                Stale locks indicate failed Terraform runs or crashed
+                processes. They block all subsequent operations.
+              remediation: |
+                Investigate and release stale locks. Check for
+                crashed Terraform processes.
+            mql: |
+              http.get("http://localhost:4000/api/v1/environment").body.jsonArray.all(
+                locked != true ||
+                lockAge < 30 * time.minute
+              )
+
+          - uid: lynx-rt-019
+            title: Recent snapshots must exist for all environments
+            impact: high
+            docs:
+              remediation: |
+                Create snapshots manually or verify scheduled
+                snapshot job is running.
+            mql: |
+              http.get("http://localhost:4000/api/v1/snapshot").body.jsonArray.where(
+                created > time.now - 24 * time.hour
+              ).length > 0
+
+      - title: File System Security
+        checks:
+          - uid: lynx-rt-020
+            title: Lynx config files must not be world-readable
+            impact: high
+            mql: |
+              file("/app/.env").permissions.mode != /o=r/
+
+          - uid: lynx-rt-021
+            title: Database credentials must not be in environment
+            impact: 60
+            docs:
+              desc: |
+                Verify DATABASE_URL or DB_PASSWORD is not visible
+                in /proc/*/environ or docker inspect.
+            mql: |
+              processes.where(name == /beam/).all(
+                environment['DATABASE_PASSWORD'] == null
+              )
