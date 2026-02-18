@@ -1,0 +1,160 @@
+# Clivern Lynx - Terraform State Backend
+# OPA policy thresholds for state management, access control, and platform security
+# Owned by: Security Team
+# Consumed by: devops-configs-policies-lynx (Rego rules)
+
+lynx:
+  authentication:
+    # Require SSO (OAuth2) - block local-only auth
+    require_sso: true
+    # Allowed OAuth2 providers
+    allowed_oauth_providers:
+      - "azure-ad"
+      - "keycloak"
+      - "okta"
+    # Block local password authentication entirely
+    block_local_auth: false
+    # Require strong passwords for local accounts (if allowed)
+    min_password_length: 16
+    # Maximum API key age in days
+    max_api_key_age_days: 90
+    # Require API key rotation
+    require_api_key_rotation: true
+    # Block sharing API keys across teams
+    block_shared_api_keys: true
+
+  user_management:
+    # Maximum number of admin-role users
+    max_admin_users: 3
+    # Require users to belong to at least one team
+    require_team_membership: true
+    # Block orphaned users (no team assignment)
+    block_orphaned_users: true
+    # Allowed user roles
+    allowed_roles:
+      - "admin"
+      - "regular"
+    # Require email domain restriction
+    require_email_domain_restriction: true
+    allowed_email_domains:
+      - "gurdipscode.com"
+
+  team_controls:
+    # Require team descriptions
+    require_team_description: true
+    # Maximum members per team (prevent mega-teams)
+    max_team_members: 25
+    # Require team-level project isolation
+    require_team_project_isolation: true
+    # Block cross-team project access
+    block_cross_team_access: true
+
+  project_governance:
+    # Require project descriptions
+    require_project_description: true
+    # Require project naming convention
+    require_project_naming_convention: true
+    project_name_pattern: "^[a-z][a-z0-9-]+$"
+    # Maximum environments per project
+    max_environments_per_project: 10
+    # Require projects assigned to exactly one team
+    require_single_team_ownership: true
+    # Block projects without any environments
+    block_empty_projects: true
+
+  environment_security:
+    # Require environment naming convention
+    require_environment_naming_convention: true
+    allowed_environment_names:
+      - "dev"
+      - "development"
+      - "staging"
+      - "uat"
+      - "preprod"
+      - "prod"
+      - "production"
+      - "dr"
+    # Require environment-level locking enabled
+    require_state_locking: true
+    # Block environments without snapshots enabled
+    require_snapshots: true
+    # Minimum snapshot retention count
+    min_snapshot_retention: 10
+    # Maximum snapshot retention count (storage control)
+    max_snapshot_retention: 100
+
+  state_management:
+    # Maximum state file size in MB (detect bloated state)
+    max_state_file_size_mb: 50
+    # Require state versioning
+    require_state_versioning: true
+    # Minimum state versions to retain
+    min_state_versions: 10
+    # Block state deletion without snapshot
+    require_snapshot_before_delete: true
+    # Require state lock timeout (prevent indefinite locks)
+    max_lock_timeout_minutes: 30
+    # Block concurrent state operations
+    require_locking_enforcement: true
+
+  network_and_transport:
+    # Require HTTPS for Lynx API
+    require_https: true
+    # Block plaintext HTTP backend URLs in Terraform configs
+    block_http_backend_urls: true
+    # Require reverse proxy (nginx) in production
+    require_reverse_proxy: true
+    # Minimum TLS version
+    min_tls_version: "1.2"
+    # Require CORS restrictions (no wildcard origins)
+    block_wildcard_cors: true
+    # Allowed CORS origins
+    allowed_cors_origins: []
+
+  database_security:
+    # Require PostgreSQL TLS connections
+    require_db_tls: true
+    # Block default database credentials
+    block_default_db_credentials: true
+    # Require dedicated database user (not postgres superuser)
+    require_dedicated_db_user: true
+    # Database connection pool limits
+    max_db_pool_size: 20
+
+  deployment_controls:
+    # Require clustered deployment in production (3+ nodes)
+    require_cluster_mode: true
+    min_cluster_nodes: 3
+    # Require health check endpoint monitoring
+    require_health_checks: true
+    # Require container image pinning (not :latest)
+    block_latest_image_tag: true
+    # Allowed Lynx image registries
+    allowed_image_registries:
+      - "ghcr.io/clivern"
+    # Require resource limits on containers
+    require_resource_limits: true
+
+  terraform_provider_controls:
+    # Require Terraform provider for all config (not manual UI)
+    require_terraform_managed: true
+    # Minimum provider version
+    min_provider_version: "0.3.0"
+    # Block hardcoded passwords in provider config
+    block_hardcoded_passwords: true
+    # Block hardcoded API keys in provider config
+    block_hardcoded_api_keys: true
+    # Require provider API URL to use HTTPS
+    require_provider_https: true
+
+  audit_and_compliance:
+    # Require audit logging on all state operations
+    require_audit_logging: true
+    # Require snapshot schedules for disaster recovery
+    require_scheduled_snapshots: true
+    # Snapshot schedule interval in hours
+    snapshot_interval_hours: 24
+    # Require backup of PostgreSQL database
+    require_db_backups: true
+    # Database backup retention in days
+    db_backup_retention_days: 30
