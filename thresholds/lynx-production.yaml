@@ -1,59 +1,27 @@
 # Clivern Lynx - Production overrides
 
 lynx:
-  authentication:
-    require_sso: true
-    block_local_auth: true
-    max_api_key_age_days: 30
-    block_shared_api_keys: true
+  user_resources:
+    block_terraform_admin_creation: true
+    allowed_terraform_roles:
+      - "regular"
+    min_password_length: 20
 
-  user_management:
-    max_admin_users: 2
-    block_orphaned_users: true
-    require_email_domain_restriction: true
-
-  team_controls:
-    block_cross_team_access: true
+  team_resources:
     max_team_members: 15
+    require_team_description: true
 
-  project_governance:
-    block_empty_projects: true
+  project_resources:
     require_single_team_ownership: true
 
-  environment_security:
-    require_state_locking: true
-    require_snapshots: true
-    min_snapshot_retention: 30
-    allowed_environment_names:
-      - "prod"
-      - "production"
-      - "dr"
+  environment_resources:
+    environment_slug_pattern: "^(prod|production|dr)$"
 
-  state_management:
-    max_state_file_size_mb: 25
-    min_state_versions: 30
-    require_snapshot_before_delete: true
-    max_lock_timeout_minutes: 15
+  provider_config:
+    require_provider_https: true
+    block_hardcoded_api_key: true
 
-  network_and_transport:
-    require_https: true
-    min_tls_version: "1.3"
-    block_wildcard_cors: true
-
-  database_security:
-    require_db_tls: true
-    max_db_pool_size: 10
-
-  deployment_controls:
-    require_cluster_mode: true
-    min_cluster_nodes: 3
-    block_latest_image_tag: true
-    require_resource_limits: true
-
-  terraform_provider_controls:
-    block_hardcoded_passwords: true
-    block_hardcoded_api_keys: true
-
-  audit_and_compliance:
-    snapshot_interval_hours: 6
-    db_backup_retention_days: 90
+  general:
+    block_team_deletion: true
+    block_project_deletion: true
+    block_environment_deletion: true
